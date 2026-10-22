@@ -1,3 +1,7 @@
+// Page d'activité d'un projet : statistiques (tâches par statut) et
+// journal chronologique des actions effectuées par les membres.
+// Chaque action est traduite en français via ACTION_LABELS.
+
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ApiClient } from '../api/client'
@@ -5,6 +9,7 @@ import { Avatar } from '../components/Avatar'
 import ProjectTabs from '../components/ProjectTabs'
 import { formatDate } from '../utils/project'
 
+// Correspondance code d'action → phrase affichée dans le journal
 const ACTION_LABELS = {
   'project.create': 'a créé le projet',
   'project.update': 'a modifié le projet',
@@ -19,6 +24,7 @@ const ACTION_LABELS = {
 
 export default function Activity() {
   const { id } = useParams()
+  // Le projet chargé contient aussi project.stats et project.activity
   const [project, setProject] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -59,6 +65,7 @@ export default function Activity() {
       <ProjectTabs projectId={id} />
       <h1>Suivi de l'évolution</h1>
 
+      {/* --- Statistiques du projet (calculées côté serveur dans project.stats) --- */}
       <div className="stats-row">
         <div className="stat-card">
           <span className="stat-label">Tâches totales</span>
@@ -78,6 +85,7 @@ export default function Activity() {
         </div>
       </div>
 
+      {/* --- Journal d'activité chronologique --- */}
       <section className="panel">
         <h3 className="panel-title">Journal d'activité</h3>
         {project.activity.length === 0 ? (
@@ -85,6 +93,7 @@ export default function Activity() {
         ) : (
           <ul className="timeline">
             {project.activity.map((a) => {
+              // On retrouve l'auteur de l'action dans la liste des membres
               const author = project.members.find((m) => m.userId === a.userId)?.user
               return (
                 <li key={a.id}>

@@ -41,6 +41,9 @@ class AuthTests(TestCase):
         )
         self.assertEqual(res.status_code, 200)
         self.assertIn('access', res.data)
+        # le frontend attend aussi le profil pour afficher le nom
+        self.assertEqual(res.data['user']['email'], 'ada@exemple.com')
+        self.assertEqual(res.data['user']['name'], 'Ada Lovelace')
 
     def test_login_wrong_password(self):
         self.register()

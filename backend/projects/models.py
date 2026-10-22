@@ -3,6 +3,8 @@ from django.db import models
 
 
 class Project(models.Model):
+    """Projet Taskify : créé par un utilisateur, partagé via des memberships et des tâches."""
+
     STATUS_ACTIVE = 'active'
     STATUS_COMPLETED = 'completed'
     STATUS_CHOICES = [
@@ -14,7 +16,9 @@ class Project(models.Model):
     description = models.TextField('description', blank=True)
     due_date = models.DateField('date limite', null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    # Date de clôture, vide tant que le projet est actif
     closed_at = models.DateTimeField(null=True, blank=True)
+    # PROTECT : un projet avec des références ne peut pas être supprimé par cascade
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -31,10 +35,13 @@ class Project(models.Model):
 
     @property
     def is_closed(self):
+        """Vrai si le projet a été clôturé (lecture seule pour les vues)."""
         return self.status == self.STATUS_COMPLETED
 
 
 class Membership(models.Model):
+    """Lien (projet, utilisateur) portant le rôle qui détermine les permissions."""
+
     ROLE_OWNER = 'owner'
     ROLE_ADMIN = 'admin'
     ROLE_MEMBER = 'member'
@@ -52,12 +59,14 @@ class Membership(models.Model):
         on_delete=models.CASCADE,
         related_name='memberships',
     )
+    # Un seul rôle par membre ; ROLE_MEMBER est la valeur par défaut
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default=ROLE_MEMBER)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['created_at']
         constraints = [
+            # Un utilisateur ne peut être membre d'un projet qu'une seule fois
             models.UniqueConstraint(fields=['project', 'user'], name='unique_project_member'),
         ]
 
@@ -66,6 +75,8 @@ class Membership(models.Model):
 
 
 class Task(models.Model):
+    """Tâche d'un projet, avec statut (kanban), priorité et responsable optionnel."""
+
     STATUS_TODO = 'todo'
     STATUS_DOING = 'doing'
     STATUS_DONE = 'done'
@@ -89,6 +100,7 @@ class Task(models.Model):
     description = models.TextField('description', blank=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_TODO)
     priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default=PRIORITY_MEDIUM)
+    # SET_NULL : la tâche reste si son responsable quitte le projet
     assignee = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -113,6 +125,8 @@ class Task(models.Model):
 
 
 class ProjectRating(models.Model):
+    """Note de 1 à 5 donnée par un utilisateur à un projet (une seule par utilisateur)."""
+
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='ratings')
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -124,6 +138,7 @@ class ProjectRating(models.Model):
 
     class Meta:
         constraints = [
+            # Une seule note par couple (projet, utilisateur)
             models.UniqueConstraint(fields=['project', 'user'], name='unique_project_rating'),
         ]
 
@@ -132,14 +147,19 @@ class ProjectRating(models.Model):
 
 
 class Activity(models.Model):
+    """Trace horodatée d'une action sur un projet (journal visible par l'équipe)."""
+
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='activity')
+    # SET_NULL : le journal est conservé même si l'auteur est supprimé
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         related_name='activities',
     )
+    # Code technique de l'action, ex : 'task.create'
     action = models.CharField(max_length=40)
+    # Phrase lisible affichée dans le journal, ex : « a créé la tâche « X » »
     detail = models.CharField(max_length=300)
     created_at = models.DateTimeField(auto_now_add=True)
 

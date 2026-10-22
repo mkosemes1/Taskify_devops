@@ -1,3 +1,8 @@
+// Page de gestion des membres d'un projet.
+// Affiche la liste des membres avec leurs rôles, permet d'ajouter un membre
+// (recherche d'utilisateur), de changer un rôle et de retirer un membre.
+// Inclut aussi la matrice des permissions (rôles × actions).
+
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ApiClient } from '../api/client'
@@ -19,6 +24,7 @@ export default function Members() {
   const [inviteOpen, setInviteOpen] = useState(false)
   const [confirm, setConfirm] = useState(null)
 
+  // --- Chargement du projet (inclut la liste des membres et des tâches) ---
   const load = useCallback(async () => {
     try {
       setProject(await ApiClient.getProject(id))
@@ -34,6 +40,7 @@ export default function Members() {
     load()
   }, [load])
 
+  // --- Actions sur les membres ---
   const changeRole = async (member, role) => {
     try {
       await ApiClient.updateMemberRole(member.id, role)
@@ -41,10 +48,11 @@ export default function Members() {
       await load()
     } catch (e) {
       toast.error(e.message)
-      await load()
+      await load() // recharge même en erreur pour réaligner l'affichage
     }
   }
 
+  // Retrait d'un membre ; relance l'erreur pour l'afficher dans le ConfirmDialog
   const removeMember = async (member) => {
     try {
       await ApiClient.removeMember(member.id)
@@ -56,6 +64,7 @@ export default function Members() {
     }
   }
 
+  // --- États de chargement / d'erreur ---
   if (loading) return <div className="page-loader">Chargement…</div>
   if (error && !project)
     return (
@@ -69,6 +78,7 @@ export default function Members() {
       </div>
     )
 
+  // --- Droits de l'utilisateur courant sur ce projet ---
   const canManage = can(project.role, 'member.add')
   const isOwner = project.role === 'owner'
 
@@ -93,6 +103,7 @@ export default function Members() {
         </button>
       </div>
 
+      {/* --- Tableau des membres --- */}
       <div className="panel">
         <table className="table">
           <thead>
@@ -106,7 +117,7 @@ export default function Members() {
           </thead>
           <tbody>
             {project.members.map((m) => {
-              const mine = m.userId === user?.id
+              const mine = m.userId === user?.id // s'agit-il de l'utilisateur connecté ?
               const tasks = project.tasks.filter((t) => t.assigneeId === m.userId)
               return (
                 <tr key={m.id}>
@@ -122,6 +133,7 @@ export default function Members() {
                     </div>
                   </td>
                   <td>
+                    {/* Le rôle du propriétaire est fixe ; sinon select si on peut gérer */}
                     {m.role === 'owner' || !canManage ? (
                       <span className="role-badge" style={{ background: ROLES[m.role].color }}>
                         {ROLES[m.role].label}
@@ -132,6 +144,7 @@ export default function Members() {
                         value={m.role}
                         onChange={(e) => changeRole(m, e.target.value)}
                       >
+                        {/* Seul le propriétaire peut attribuer le rôle « propriétaire » */}
                         {ROLE_OPTIONS.filter((r) => r !== 'owner' || isOwner).map((r) => (
                           <option key={r} value={r}>
                             {ROLES[r].label}
@@ -145,6 +158,7 @@ export default function Members() {
                   </td>
                   <td className="muted small">{new Date(m.user?.createdAt || Date.now()).toLocaleDateString('fr-FR')}</td>
                   <td className="right">
+                    {/* On peut retirer un autre membre (si on gère) ou quitter soi-même ; jamais le propriétaire */}
                     {m.role !== 'owner' && (canManage || mine) && (
                       <button
                         className="btn btn-ghost btn-sm"
@@ -171,6 +185,7 @@ export default function Members() {
         </table>
       </div>
 
+      {/* --- Matrice des permissions : chaque rôle × chaque permission (can) --- */}
       <section className="panel">
         <h3 className="panel-title">Matrice des permissions</h3>
         <div className="perm-grid">
@@ -191,6 +206,7 @@ export default function Members() {
         </div>
       </section>
 
+      {/* Modal d'ajout d'un membre (recherche d'un utilisateur existant) */}
       {inviteOpen && (
         <InviteModal
           onClose={() => setInviteOpen(false)}
@@ -199,6 +215,7 @@ export default function Members() {
         />
       )}
 
+      {/* ConfirmDialog pour le retrait / le départ du projet */}
       {confirm && (
         <ConfirmDialog
           title={confirm.title}
@@ -213,6 +230,9 @@ export default function Members() {
   )
 }
 
+// Modal d'invitation : recherche d'un utilisateur par nom ou email,
+// puis ajout comme membre du projet. Seuls les utilisateurs déjà
+// inscrits sur Taskify peuvent être ajoutés.
 function InviteModal({ onClose, onInvited, projectId }) {
   const toast = useToast()
   const [query, setQuery] = useState('')
@@ -220,16 +240,20 @@ function InviteModal({ onClose, onInvited, projectId }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
+  // --- Recherche avec debounce (250 ms) ---
+  // On attend 250 ms après la dernière frappe avant d'appeler l'API,
+  // pour ne pas la noyer sous les requêtes à chaque caractère.
   useEffect(() => {
-    let alive = true
+    let alive = true // drapeau : false si le composant est démonté ou l'effet relancé
     const t = setTimeout(async () => {
       try {
         const users = await ApiClient.searchUsers(query)
-        if (alive) setResults(users)
+        if (alive) setResults(users) // ignore la réponse si plus pertinent
       } catch {
         if (alive) setResults([])
       }
     }, 250)
+    // Nettoyage : on annule le timer en attente si l'utilisateur retape
     return () => {
       alive = false
       clearTimeout(t)

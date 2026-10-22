@@ -60,6 +60,7 @@ def project_queryset_for(user):
 
 
 def project_detail_payload(project, user, membership):
+    """Payload complet du projet : infos, tâches, membres, statistiques et activité."""
     tasks = project.tasks.all()
     members = project.memberships.select_related('user').all()
     activity = project.activity.select_related('user')[:30]
@@ -82,11 +83,19 @@ def project_detail_payload(project, user, membership):
 
 
 class ProjectListCreateView(APIView):
+    """Liste et création des projets de l'utilisateur connecté (authentification requise).
+
+    GET  : renvoie les projets dont l'utilisateur est membre.
+    POST : crée un projet ; le créateur devient automatiquement propriétaire.
+    """
+
     def get(self, request):
+        """Liste les projets accessibles à l'utilisateur, avec leurs compteurs."""
         projects = project_queryset_for(request.user)
         return Response(ProjectSerializer(projects, many=True, context={'user': request.user}).data)
 
     def post(self, request):
+        """Crée le projet et le membership « propriétaire », puis renvoie le projet (201)."""
         serializer = ProjectCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         with transaction.atomic():
@@ -105,14 +114,22 @@ class ProjectListCreateView(APIView):
 
 
 class ProjectDetailView(APIView):
+    """Détail, modification et suppression d'un projet.
+
+    L'accès exige d'être membre du projet, sinon 404/403 (get_membership_or_404).
+    """
+
     def get_object(self, request, project_id):
+        """Renvoie (projet, membership de l'appelant), ou 404/403 s'il n'est pas membre."""
         return get_membership_or_404(project_id, request.user)
 
     def get(self, request, project_id):
+        """Détail complet : tâches, membres, statistiques et journal d'activité."""
         project, membership = self.get_object(request, project_id)
         return Response(project_detail_payload(project, request.user, membership))
 
     def put(self, request, project_id):
+        """Mise à jour partielle — permission 'project.edit' et projet non clôturé."""
         project, membership = self.get_object(request, project_id)
         require_permission(membership, 'project.edit')
         require_writable_project(project)
@@ -123,6 +140,7 @@ class ProjectDetailView(APIView):
         return Response(ProjectSerializer(project, context={'user': request.user}).data)
 
     def delete(self, request, project_id):
+        """Suppression — réservée au créateur du projet (403 sinon)."""
         project, _ = self.get_object(request, project_id)
         if project.created_by_id != request.user.id:
             raise PermissionDenied('Seul le créateur peut supprimer')
@@ -131,7 +149,10 @@ class ProjectDetailView(APIView):
 
 
 class ProjectRateView(APIView):
+    """Notation d'un projet — POST, permission 'project.rate' (membre du projet)."""
+
     def post(self, request, project_id):
+        """Note le projet de 1 à 5 ; remplace la note précédente de l'utilisateur."""
         project, membership = get_membership_or_404(project_id, request.user)
         require_permission(membership, 'project.rate')
         serializer = RateSerializer(data=request.data)
@@ -145,7 +166,10 @@ class ProjectRateView(APIView):
 
 
 class ProjectCloseView(APIView):
+    """Clôture d'un projet — POST, permission 'project.close' (owner ou admin)."""
+
     def post(self, request, project_id):
+        """Passe le projet en « Clôturé » si toutes ses tâches sont terminées (400 sinon)."""
         project, membership = get_membership_or_404(project_id, request.user)
         require_permission(membership, 'project.close')
         statuses = list(project.tasks.values_list('status', flat=True))
@@ -161,12 +185,20 @@ class ProjectCloseView(APIView):
 
 
 class MemberListCreateView(APIView):
+    """Membres d'un projet.
+
+    GET  : liste réservée aux membres du projet.
+    POST : ajout d'un membre — permission 'member.add'.
+    """
+
     def get(self, request, project_id):
+        """Liste les membres du projet avec leur profil utilisateur."""
         project, _ = get_membership_or_404(project_id, request.user)
         members = project.memberships.select_related('user')
         return Response(MembershipSerializer(members, many=True).data)
 
     def post(self, request, project_id):
+        """Ajoute un utilisateur déjà inscrit (identifié par email) comme membre (201)."""
         project, membership = get_membership_or_404(project_id, request.user)
         require_permission(membership, 'member.add')
         serializer = MemberInviteSerializer(data=request.data)
@@ -184,7 +216,13 @@ class MemberListCreateView(APIView):
 
 
 class MemberDetailView(APIView):
+    """Changement de rôle et retrait d'un membre.
+
+    L'appelant doit appartenir au projet concerné (404/403 sinon).
+    """
+
     def get_object(self, request, member_id):
+        """Charge le membership visé et vérifie que l'appelant est membre du même projet."""
         member = Membership.objects.select_related('user', 'project').filter(pk=member_id).first()
         if member is None:
             raise NotFound('Membre introuvable')
@@ -192,6 +230,7 @@ class MemberDetailView(APIView):
         return member, my_membership
 
     def put(self, request, member_id):
+        """Changement de rôle — permission 'member.edit' (transfert de propriété réservé au propriétaire)."""
         member, my_membership = self.get_object(request, member_id)
         require_permission(my_membership, 'member.edit')
         serializer = RoleSerializer(data=request.data)
@@ -211,6 +250,7 @@ class MemberDetailView(APIView):
         return Response(MembershipSerializer(member).data)
 
     def delete(self, request, member_id):
+        """Retrait — permission 'member.remove', ou départ volontaire si c'est son propre membership."""
         member, my_membership = self.get_object(request, member_id)
         is_self = member.user_id == request.user.id
         if not is_self:
@@ -234,11 +274,19 @@ class MemberDetailView(APIView):
 
 
 class TaskListCreateView(APIView):
+    """Tâches d'un projet.
+
+    GET  : liste réservée aux membres du projet.
+    POST : création — permission 'task.create' et projet non clôturé.
+    """
+
     def get(self, request, project_id):
+        """Liste toutes les tâches du projet."""
         project, _ = get_membership_or_404(project_id, request.user)
         return Response(TaskSerializer(project.tasks.all(), many=True).data)
 
     def post(self, request, project_id):
+        """Crée une tâche dans le projet et journalise l'action (201)."""
         project, membership = get_membership_or_404(project_id, request.user)
         require_permission(membership, 'task.create')
         require_writable_project(project)
@@ -250,7 +298,13 @@ class TaskListCreateView(APIView):
 
 
 class TaskDetailView(APIView):
+    """Modification et suppression d'une tâche.
+
+    L'appelant doit appartenir au projet de la tâche (404/403 sinon).
+    """
+
     def get_object(self, request, task_id):
+        """Charge la tâche puis vérifie l'appartenance de l'appelant à son projet."""
         task = Task.objects.select_related('project').filter(pk=task_id).first()
         if task is None:
             raise NotFound('Tâche introuvable')
@@ -258,6 +312,7 @@ class TaskDetailView(APIView):
         return task, membership
 
     def put(self, request, task_id):
+        """Mise à jour partielle — permission 'task.edit' ; journalise le changement de statut."""
         task, membership = self.get_object(request, task_id)
         require_permission(membership, 'task.edit')
         require_writable_project(task.project)
@@ -277,6 +332,7 @@ class TaskDetailView(APIView):
         return Response(TaskSerializer(task).data)
 
     def delete(self, request, task_id):
+        """Suppression — permission 'task.delete' et projet non clôturé."""
         task, membership = self.get_object(request, task_id)
         require_permission(membership, 'task.delete')
         require_writable_project(task.project)

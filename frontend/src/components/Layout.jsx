@@ -1,3 +1,7 @@
+// Layout applicatif des pages protégées : barre du haut (marque,
+// utilisateur, déconnexion) et zone de contenu où les routes
+// enfant sont rendues via <Outlet />.
+
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { Avatar } from './Avatar'
@@ -6,6 +10,7 @@ export default function Layout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
+  // Déconnexion puis redirection vers la page de connexion
   const handleLogout = async () => {
     await logout()
     navigate('/login')

@@ -1,3 +1,9 @@
+// Système de permissions basé sur les rôles (RBAC simplifié).
+// Chaque rôle possède une liste de permissions (ex : 'task.create').
+// La fonction can(role, permission) est utilisée dans les pages pour
+// afficher ou masquer les boutons et actions selon le rôle de l'utilisateur.
+
+// Rôles disponibles dans un projet, avec libellé et couleur d'affichage
 export const ROLES = {
   owner: { label: 'Propriétaire', color: '#7c5cff' },
   admin: { label: 'Administrateur', color: '#f59f00' },
@@ -5,8 +11,11 @@ export const ROLES = {
   viewer: { label: 'Observateur', color: '#868e96' },
 }
 
+// Liste des clés de rôles (utilisée pour les selects et la matrice)
 export const ROLE_OPTIONS = Object.keys(ROLES)
 
+// Matrice rôle → permissions accordées.
+// Le propriétaire reçoit '*' : il a toutes les permissions.
 const MATRIX = {
   owner: ['*'],
   admin: [
@@ -34,15 +43,17 @@ const MATRIX = {
     'task.move',
     'task.assign',
   ],
-  viewer: ['project.view', 'task.view'],
+  viewer: ['project.view', 'task.view'], // lecture seule
 }
 
+// Vérifie si un rôle possède une permission ('*' = toutes les permissions)
 export function can(role, permission) {
   const grants = MATRIX[role]
   if (!grants) return false
   return grants.includes('*') || grants.includes(permission)
 }
 
+// Libellés lisibles des permissions (affichés dans la matrice de Members.jsx)
 export const PERMISSIONS = {
   'project.edit': 'Modifier les informations du projet',
   'project.rate': 'Évaluer le projet',

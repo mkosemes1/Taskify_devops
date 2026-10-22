@@ -1,3 +1,7 @@
+// Détail d'un projet : tableau Kanban avec 3 colonnes (À faire, En cours,
+// Terminé). Gère le drag & drop des tâches, le CRUD des tâches (TaskModal),
+// la clôture du projet et l'affichage de la charge par membre.
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ApiClient } from '../api/client'
@@ -11,6 +15,7 @@ import ProjectTabs from '../components/ProjectTabs'
 import { COLUMNS, PRIORITIES, formatDate, isOverdue, progressOf } from '../utils/project'
 import { ROLES, can } from '../utils/permissions'
 
+// Valeurs par défaut d'une tâche neuve (formulaire de création)
 const EMPTY_TASK = {
   title: '',
   description: '',
@@ -20,6 +25,9 @@ const EMPTY_TASK = {
   dueDate: '',
 }
 
+// Formulaire de création / modification d'une tâche.
+// Si l'utilisateur n'a pas la permission (can), le modal n'affiche
+// qu'une vue lecture seule des détails.
 function TaskModal({ task, project, onClose, onSaved, onDelete, defaultStatus }) {
   const toast = useToast()
   const [form, setForm] = useState(
@@ -32,7 +40,7 @@ function TaskModal({ task, project, onClose, onSaved, onDelete, defaultStatus })
           assigneeId: task.assigneeId || '',
           dueDate: task.dueDate || '',
         }
-      : { ...EMPTY_TASK, status: defaultStatus || 'todo' },
+      : { ...EMPTY_TASK, status: defaultStatus || 'todo' }, // colonne d'origine en création
   )
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -43,12 +51,13 @@ function TaskModal({ task, project, onClose, onSaved, onDelete, defaultStatus })
     e.preventDefault()
     setBusy(true)
     setError('')
+    // assigneeId vide → null (non attribuée)
     const payload = { ...form, assigneeId: form.assigneeId || null }
     try {
       if (task) await ApiClient.updateTask(task.id, payload)
       else await ApiClient.createTask(project.id, payload)
       toast.success(task ? 'Tâche mise à jour' : 'Tâche créée')
-      onSaved()
+      onSaved() // recharge le projet pour voir la tâche à jour
       onClose()
     } catch (err) {
       setError(err.message)
@@ -59,6 +68,7 @@ function TaskModal({ task, project, onClose, onSaved, onDelete, defaultStatus })
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
 
+  // --- Vue lecture seule si pas de permission d'édition ---
   if (!editable) {
     return (
       <Modal title="Détail de la tâche" onClose={onClose}>
@@ -158,11 +168,14 @@ function TaskModal({ task, project, onClose, onSaved, onDelete, defaultStatus })
   )
 }
 
+// Carte de tâche affichée dans une colonne du Kanban.
+// Devient « draggable » uniquement si le projet n'est pas clôturé
+// et si l'utilisateur a la permission task.move.
 function TaskCard({ task, project, onOpen, onDragStart }) {
   const assignee = project.members.find((m) => m.userId === task.assigneeId)?.user
   const prio = PRIORITIES[task.priority]
   const overdue = isOverdue(task.dueDate, task.status)
-  const locked = project.status === 'completed'
+  const locked = project.status === 'completed' // projet clôturé → lecture seule
 
   return (
     <article
@@ -171,7 +184,7 @@ function TaskCard({ task, project, onOpen, onDragStart }) {
       onDragStart={(e) => onDragStart(e, task)}
       onClick={() => onOpen(task)}
       tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && onOpen(task)}
+      onKeyDown={(e) => e.key === 'Enter' && onOpen(task)} // accessibilité : Enter ouvre la tâche
     >
       <div className="task-card-top">
         <span className="priority-chip" style={{ background: prio.color }}>
@@ -189,6 +202,7 @@ function TaskCard({ task, project, onOpen, onDragStart }) {
   )
 }
 
+// Page principale du tableau Kanban d'un projet.
 export default function ProjectDetail() {
   const { id } = useParams()
   const toast = useToast()
@@ -197,9 +211,10 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [taskModal, setTaskModal] = useState(null) // { mode, task? }
-  const [confirm, setConfirm] = useState(null)
-  const [dragOver, setDragOver] = useState(null)
+  const [confirm, setConfirm] = useState(null) // état du ConfirmDialog (clôture / suppression)
+  const [dragOver, setDragOver] = useState(null) // colonne survolée pendant le drag
 
+  // --- Chargement du projet ---
   const load = useCallback(async () => {
     try {
       const data = await ApiClient.getProject(id)
@@ -207,6 +222,7 @@ export default function ProjectDetail() {
       setError('')
     } catch (e) {
       setError(e.message)
+      // 404 (introuvable) ou 401 (non autorisé) : pas de projet à afficher
       if (e.status === 404 || e.status === 401) setProject(null)
     } finally {
       setLoading(false)
@@ -217,6 +233,8 @@ export default function ProjectDetail() {
     load()
   }, [load])
 
+  // --- Regroupement des tâches par colonne ---
+  // useMemo : recalculé uniquement quand `project` change (tri par date de maj)
   const byColumn = useMemo(() => {
     const map = { todo: [], doing: [], done: [] }
     project?.tasks.forEach((t) => map[t.status]?.push(t))
@@ -226,41 +244,51 @@ export default function ProjectDetail() {
     return map
   }, [project])
 
+  // --- Optimistic update : déplacement d'une tâche entre colonnes ---
+  // On applique le déplacement immédiatement dans l'état local (UI réactive),
+  // puis on appelle l'API ; si l'API échoue, on restaure l'état précédent.
   const moveTask = async (task, status) => {
     if (task.status === status) return
     if (!can(project.role, 'task.move')) {
       toast.error('Votre rôle ne permet pas de déplacer les tâches')
       return
     }
-    const previous = project.tasks
+    const previous = project.tasks // sauvegarde pour rollback
     const nextTasks = project.tasks.map((t) => (t.id === task.id ? { ...t, status } : t))
     const allDoneNow = nextTasks.length > 0 && nextTasks.every((t) => t.status === 'done')
-    setProject({ ...project, tasks: nextTasks })
+    setProject({ ...project, tasks: nextTasks }) // affichage immédiat du déplacement
     try {
       await ApiClient.updateTask(task.id, { status })
-      await load()
+      await load() // resynchronisation avec le serveur
       if (status === 'done' && allDoneNow) {
         toast.success('Toutes les tâches sont terminées ! Le projet peut être clôturé.')
       }
     } catch (e) {
-      setProject({ ...project, tasks: previous })
+      setProject({ ...project, tasks: previous }) // rollback si erreur
       toast.error(e.message)
     }
   }
 
+  // --- Drag & drop (HTML5) ---
+  // onDragStart : on stocke l'id de la tâche dans le dataTransfer
   const onDragStart = (e, task) => {
-    e.dataTransfer.setData('text/plain', task.id)
+    // dataTransfer ne manipule que des chaînes : on convertit l'id (nombre
+    // renvoyé par Django) en string, sinon la comparaison au drop échoue
+    e.dataTransfer.setData('text/plain', String(task.id))
     e.dataTransfer.effectAllowed = 'move'
   }
 
+  // onDrop : on relit l'id et on déplace la tâche vers la colonne cible
   const onDrop = (e, status) => {
     e.preventDefault()
     setDragOver(null)
     const taskId = e.dataTransfer.getData('text/plain')
-    const task = project.tasks.find((t) => t.id === taskId)
+    // comparaison en string : t.id est un nombre côté API
+    const task = project.tasks.find((t) => String(t.id) === taskId)
     if (task) moveTask(task, status)
   }
 
+  // --- Suppression d'une tâche ---
   const deleteTask = async (task) => {
     try {
       await ApiClient.deleteTask(task.id)
@@ -271,6 +299,7 @@ export default function ProjectDetail() {
     }
   }
 
+  // --- Clôture du projet (lecture seule) ---
   const closeProject = async () => {
     try {
       await ApiClient.closeProject(id)
@@ -278,10 +307,11 @@ export default function ProjectDetail() {
       await load()
     } catch (e) {
       toast.error(e.message)
-      throw e
+      throw e // relancé pour que le ConfirmDialog affiche l'erreur
     }
   }
 
+  // --- États de chargement / d'erreur ---
   if (loading) return <div className="page-loader">Chargement…</div>
   if (error && !project)
     return (
@@ -295,6 +325,7 @@ export default function ProjectDetail() {
       </div>
     )
 
+  // --- Données dérivées pour le rendu ---
   const pct = progressOf(project.tasks)
   const canClose = can(project.role, 'project.close')
   const allDone = project.tasks.length > 0 && project.tasks.every((t) => t.status === 'done')
@@ -353,14 +384,15 @@ export default function ProjectDetail() {
 
       <ProjectTabs projectId={id} />
 
+      {/* --- Tableau Kanban : 3 colonnes avec gestion du drag & drop --- */}
       <div className="board">
         {COLUMNS.map((col) => (
           <section
             key={col.id}
             className={`board-col ${dragOver === col.id ? 'drag-over' : ''}`}
             onDragOver={(e) => {
-              e.preventDefault()
-              setDragOver(col.id)
+              e.preventDefault() // indispensable pour autoriser le drop
+              setDragOver(col.id) // surligne la colonne survolée
             }}
             onDragLeave={() => setDragOver(null)}
             onDrop={(e) => onDrop(e, col.id)}
@@ -394,6 +426,7 @@ export default function ProjectDetail() {
         ))}
       </div>
 
+      {/* --- Charge de travail par membre (tâches assignées / terminées) --- */}
       <section className="panel">
         <h3 className="panel-title">Répartition des membres</h3>
         <div className="member-strip">
@@ -418,6 +451,7 @@ export default function ProjectDetail() {
         </p>
       </section>
 
+      {/* Modal de tâche (création / modification / consultation) */}
       {taskModal && (
         <TaskModal
           task={taskModal.mode === 'edit' ? taskModal.task : null}
@@ -425,6 +459,7 @@ export default function ProjectDetail() {
           defaultStatus={taskModal.defaultStatus}
           onClose={() => setTaskModal(null)}
           onSaved={load}
+          // Avant de supprimer, on ferme le modal et on demande confirmation
           onDelete={() => {
             const t = taskModal.task
             setTaskModal(null)
@@ -439,6 +474,7 @@ export default function ProjectDetail() {
         />
       )}
 
+      {/* ConfirmDialog générique (clôture du projet, suppression de tâche) */}
       {confirm && (
         <ConfirmDialog
           title={confirm.title}

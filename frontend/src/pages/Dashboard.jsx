@@ -1,3 +1,8 @@
+// Tableau de bord : liste des projets de l'utilisateur connecté.
+// Permet de créer / noter des projets, de filtrer par statut et de
+// rechercher par nom ou description. Le formulaire de création/modification
+// est partagé via le composant interne ProjectForm.
+
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ApiClient } from '../api/client'
@@ -8,6 +13,8 @@ import StarRating from '../components/StarRating'
 import { ROLES, can } from '../utils/permissions'
 import { formatDate } from '../utils/project'
 
+// Formulaire réutilisé pour la création ET la modification d'un projet.
+// `initial` est null en création, ou pré-remplit les champs en modification.
 function ProjectForm({ initial, onSubmit, onClose, submitLabel }) {
   const [form, setForm] = useState(
     initial || { name: '', description: '', dueDate: '' },
@@ -20,7 +27,7 @@ function ProjectForm({ initial, onSubmit, onClose, submitLabel }) {
     setBusy(true)
     setError('')
     try {
-      await onSubmit(form)
+      await onSubmit(form) // createProject ou updateProject selon le mode
       onClose()
     } catch (err) {
       setError(err.message)
@@ -63,9 +70,12 @@ export default function Dashboard() {
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null) // { mode: 'create' } | { mode: 'edit', project }
-  const [filter, setFilter] = useState('all')
-  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState('all') // 'all' | 'active' | 'completed'
+  const [query, setQuery] = useState('') // texte de la barre de recherche
 
+  // --- Chargement des projets ---
+  // useCallback : la fonction est mémoïsée pour éviter de relancer
+  // l'effet à chaque rendu (elle dépend uniquement de toast, stable).
   const load = useCallback(async () => {
     try {
       setProjects(await ApiClient.listProjects())
@@ -77,13 +87,14 @@ export default function Dashboard() {
   }, [toast])
 
   useEffect(() => {
-    load()
+    load() // chargement initial au montage du composant
   }, [load])
 
+  // --- Actions sur les projets ---
   const createProject = async (form) => {
     const p = await ApiClient.createProject(form)
     toast.success('Projet créé')
-    await load()
+    await load() // recharge pour avoir le rôle et les compteurs à jour
     return p
   }
 
@@ -93,6 +104,7 @@ export default function Dashboard() {
     await load()
   }
 
+  // Notation : appelle l'API puis recharge la liste pour la moyenne à jour
   const rate = async (project, value) => {
     try {
       await ApiClient.rateProject(project.id, value)
@@ -102,6 +114,8 @@ export default function Dashboard() {
     }
   }
 
+  // --- Filtre statut + recherche textuelle ---
+  // visible = sous-ensemble des projets affiché selon les deux critères combinés
   const visible = projects.filter((p) => {
     const okFilter =
       filter === 'all' ||
@@ -113,6 +127,7 @@ export default function Dashboard() {
     return okFilter && okQuery
   })
 
+  // Statistiques globales affichées dans l'en-tête de page
   const totalTasks = projects.reduce((s, p) => s + p.taskCount, 0)
   const totalDone = projects.reduce((s, p) => s + p.doneCount, 0)
 
@@ -154,6 +169,7 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* --- Grille des cartes projets --- */}
       {loading ? (
         <div className="page-loader">Chargement des projets…</div>
       ) : visible.length === 0 ? (
@@ -169,7 +185,7 @@ export default function Dashboard() {
         <div className="project-grid">
           {visible.map((p) => {
             const pct = p.taskCount ? Math.round((p.doneCount / p.taskCount) * 100) : 0
-            const role = ROLES[p.role]
+            const role = ROLES[p.role] // libellé + couleur du rôle de l'utilisateur sur ce projet
             return (
               <article key={p.id} className={`project-card ${p.status === 'completed' ? 'is-closed' : ''}`}>
                 <div className="project-card-head">
@@ -191,6 +207,7 @@ export default function Dashboard() {
                   <ProgressBar value={pct} />
                 </div>
                 <div className="project-card-foot">
+                  {/* can() vérifie ici que l'utilisateur a le droit de noter (project.rate) */}
                   <StarRating value={p.rating || 0} size={15} onRate={(v) => rate(p, v)} disabled={!can(p.role, 'project.rate')} />
                   <span className="muted small">
                     {p.memberCount} membre{p.memberCount > 1 ? 's' : ''} · {p.status === 'completed' ? 'Clôturé' : formatDate(p.dueDate)}
@@ -202,6 +219,7 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Modal partagé création / modification d'un projet */}
       {modal && (
         <Modal
           title={modal.mode === 'create' ? 'Nouveau projet' : 'Modifier le projet'}

@@ -1,3 +1,7 @@
+// Avatar à partir des initiales de l'utilisateur (pas d'image).
+// Affiche un « ? » si aucun utilisateur n'est fourni ; la couleur de fond
+// vient de user.avatarColor (définie côté serveur à l'inscription).
+
 export function Avatar({ user, size = 32 }) {
   if (!user) {
     return (
@@ -6,6 +10,7 @@ export function Avatar({ user, size = 32 }) {
       </span>
     )
   }
+  // Initiales : première lettre des 1 ou 2 premiers mots, en majuscules
   const initials = user.name
     .split(' ')
     .map((p) => p[0])

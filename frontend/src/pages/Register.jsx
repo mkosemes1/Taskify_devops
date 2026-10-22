@@ -1,3 +1,7 @@
+// Page d'inscription : création d'un compte (nom, email, mot de passe).
+// Vérifie côté client que la confirmation du mot de passe correspond
+// avant d'appeler AuthContext.register.
+
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
@@ -11,8 +15,10 @@ export default function Register() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
+  // --- Gestion de la soumission du formulaire ---
   const submit = async (e) => {
     e.preventDefault()
+    // Contrôle de cohérence des deux mots de passe avant l'appel API
     if (form.password !== form.confirm) {
       setError('Les mots de passe ne correspondent pas')
       return
@@ -30,6 +36,7 @@ export default function Register() {
     }
   }
 
+  // Générateur de handler : set('email') renvoie un onChange pour ce champ
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
 
   return (

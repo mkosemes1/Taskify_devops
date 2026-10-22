@@ -1,3 +1,7 @@
+// Boîte de dialogue de confirmation (suppression, clôture…).
+// Attend une fonction asynchrone `onConfirm` ; affiche une erreur
+// si celle-ci échoue, et ferme le modal seulement en cas de succès.
+
 import { useState } from 'react'
 import Modal from './Modal'
 
@@ -10,9 +14,9 @@ export default function ConfirmDialog({ title, message, confirmLabel = 'Confirme
     setError('')
     try {
       await onConfirm()
-      onClose()
+      onClose() // fermeture uniquement si l'action a réussi
     } catch (e) {
-      setError(e.message)
+      setError(e.message) // l'erreur reste affichée dans le modal
     } finally {
       setBusy(false)
     }

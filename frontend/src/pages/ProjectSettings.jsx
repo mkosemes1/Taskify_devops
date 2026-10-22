@@ -1,3 +1,7 @@
+// Réglages d'un projet : consultation et modification des informations,
+// notation (étoiles), cycle de vie (clôture / réouverture) et zone
+// sensible de suppression (réservée au créateur du projet).
+
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApiClient } from '../api/client'
@@ -20,7 +24,7 @@ export default function ProjectSettings() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [editOpen, setEditOpen] = useState(false)
-  const [confirm, setConfirm] = useState(null)
+  const [confirm, setConfirm] = useState(null) // ConfirmDialog : clôture ou suppression
 
   const load = useCallback(async () => {
     try {
@@ -50,18 +54,21 @@ export default function ProjectSettings() {
       </div>
     )
 
+  // --- Données dérivées pour l'affichage et les droits ---
   const pct = progressOf(project.tasks)
   const allDone = project.tasks.length > 0 && project.tasks.every((t) => t.status === 'done')
   const closed = project.status === 'completed'
-  const isCreator = project.createdBy === user?.id
+  const isCreator = project.createdBy === user?.id // seul le créateur peut supprimer
   const canEdit = can(project.role, 'project.edit')
 
+  // --- Actions sur le projet ---
   const update = async (form) => {
     await ApiClient.updateProject(id, form)
     toast.success('Projet mis à jour')
     await load()
   }
 
+  // Notation : envoie la note puis recharge pour la moyenne
   const rate = async (value) => {
     try {
       await ApiClient.rateProject(id, value)
@@ -72,18 +79,21 @@ export default function ProjectSettings() {
     }
   }
 
+  // Clôture : le projet passe en lecture seule
   const closeProject = async () => {
     await ApiClient.closeProject(id)
     toast.success('Projet clôturé')
     await load()
   }
 
+  // Réouverture : on repasse le statut à « active » et on vide closedAt
   const reopenProject = async () => {
     await ApiClient.updateProject(id, { status: 'active', closedAt: null })
     toast.success('Projet rouvert')
     await load()
   }
 
+  // Suppression définitive : on redirige vers le tableau de bord
   const deleteProject = async () => {
     await ApiClient.deleteProject(id)
     toast.success('Projet supprimé')
@@ -156,6 +166,7 @@ export default function ProjectSettings() {
           <p className="muted small">Votre note compte dans la moyenne du projet.</p>
         </section>
 
+        {/* --- Cycle de vie : clôture ou réouverture --- */}
         <section className="panel">
           <h3 className="panel-title">Cycle de vie</h3>
           {!closed ? (
@@ -165,6 +176,7 @@ export default function ProjectSettings() {
                   ? 'Toutes les tâches sont terminées : le projet peut être clôturé.'
                   : 'La clôture est possible lorsque toutes les tâches sont terminées.'}
               </p>
+              {/* Clôture bloquée tant que toutes les tâches ne sont pas faites ou sans permission */}
               <button
                 className="btn btn-primary"
                 disabled={!allDone || !can(project.role, 'project.close')}
@@ -194,6 +206,7 @@ export default function ProjectSettings() {
           )}
         </section>
 
+        {/* --- Zone sensible : suppression définitive (créateur uniquement) --- */}
         <section className="panel panel-danger">
           <h3 className="panel-title">Zone sensible</h3>
           <p className="muted">
@@ -218,12 +231,14 @@ export default function ProjectSettings() {
         </section>
       </div>
 
+      {/* Modal d'édition des informations du projet */}
       {editOpen && (
         <Modal title="Modifier le projet" onClose={() => setEditOpen(false)}>
           <EditForm initial={project} onSubmit={update} onClose={() => setEditOpen(false)} />
         </Modal>
       )}
 
+      {/* ConfirmDialog (clôture ou suppression, selon le bouton cliqué) */}
       {confirm && (
         <ConfirmDialog
           title={confirm.title}
@@ -238,6 +253,8 @@ export default function ProjectSettings() {
   )
 }
 
+// Formulaire d'édition des informations principales du projet
+// (nom, description, date limite), utilisé dans le Modal d'édition.
 function EditForm({ initial, onSubmit, onClose }) {
   const [form, setForm] = useState({
     name: initial.name,

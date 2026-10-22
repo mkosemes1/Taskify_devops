@@ -1,9 +1,12 @@
+"""Administration Django des modèles de l'app projets (projets, membres, tâches)."""
 from django.contrib import admin
 
 from .models import Activity, Membership, Project, ProjectRating, Task
 
 
 class MembershipInline(admin.TabularInline):
+    """Édition des membres directement dans la fiche d'un projet."""
+
     model = Membership
     extra = 0
 

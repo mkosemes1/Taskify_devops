@@ -1,3 +1,7 @@
+// Page de connexion : formulaire email + mot de passe.
+// Appelle AuthContext.login, affiche un toast de bienvenue puis redirige
+// vers le tableau de bord en cas de succès.
+
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
@@ -9,8 +13,9 @@ export default function Login() {
   const navigate = useNavigate()
   const [form, setForm] = useState({ email: '', password: '' })
   const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState(false) // désactive le bouton pendant l'appel API
 
+  // --- Gestion de la soumission du formulaire ---
   const submit = async (e) => {
     e.preventDefault()
     setBusy(true)
@@ -20,7 +25,7 @@ export default function Login() {
       toast.success(`Bienvenue, ${user.name} !`)
       navigate('/')
     } catch (err) {
-      setError(err.message)
+      setError(err.message) // message renvoyé par le client API
     } finally {
       setBusy(false)
     }
