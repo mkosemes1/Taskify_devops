@@ -2,7 +2,7 @@
  * Client REST unique — toutes les requêtes partent vers le backend Django.
  *
  * En dev : VITE_API_URL=/api (proxy Vite → backend, cf. vite.config.js)
- * En prod : le build reçoit VITE_API_URL=/api et nginx proxifie vers backend:8000
+ * En prod : le build reçoit VITE_API_URL=/api (préfixe de l'API)
  */
 const BASE_URL = import.meta.env.VITE_API_URL || '/api'
 const TOKEN_KEY = 'taskify_token'

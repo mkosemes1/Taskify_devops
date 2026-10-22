@@ -34,8 +34,6 @@ backend Django via `src/api/client.js`.
 frontend/
 ├── index.html
 ├── vite.config.js            # proxy /api → backend (:8000) en dev
-├── Dockerfile                # multi-stage : node build → nginx
-├── nginx.conf                # SPA + proxy /api → backend:8000
 └── src/
     ├── main.jsx              # BrowserRouter + providers
     ├── App.jsx               # routes (protégées / invité)
@@ -72,22 +70,7 @@ Le backend doit tourner sur `:8000` (le proxy Vite redirige `/api`).
 
 | Variable | Défaut | Description |
 |---|---|---|
-| `VITE_API_URL` | `/api` | préfixe de l'API. Vide/absent = proxy `/api` (dev et prod nginx) |
-
-## Conteneurisation
-
-```bash
-# inclus dans docker-compose.yml à la racine
-docker compose build frontend
-docker compose up -d
-# application sur http://localhost (nginx)
-```
-
-- **Étape 1** (`node:20-alpine`) : `npm ci` puis `npm run build`
-  avec `ARG VITE_API_URL` (défaut `/api`).
-- **Étape 2** (`nginx:1.27-alpine`) : sert `dist/` avec fallback SPA
-  (`try_files … /index.html`) et proxifie `/api/` vers `http://backend:8000/api/`
-  sur le réseau interne de docker-compose.
+| `VITE_API_URL` | `/api` | préfixe de l'API. Vide/absent = proxy `/api` (dev Vite) |
 
 ## Notes
 

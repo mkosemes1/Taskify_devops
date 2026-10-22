@@ -13,7 +13,7 @@ de données** (aucun fallback SQLite).
 | Base | PostgreSQL (psycopg 3) |
 | CORS | django-cors-headers (frontend Vite) |
 | Statique | WhiteNoise (`collectstatic`) |
-| Serveur | gunicorn (conteneur) / runserver (dev) |
+| Serveur | runserver (dev) / gunicorn (prod) |
 | Tests | Django test runner (24 tests) sur PostgreSQL |
 
 ## Structure
@@ -22,8 +22,6 @@ de données** (aucun fallback SQLite).
 backend/
 ├── manage.py
 ├── requirements.txt
-├── entrypoint.sh             # conteneur : attend la BDD → migrate → collectstatic → gunicorn
-├── Dockerfile                # python:3.13-slim + gunicorn
 ├── .env.example              # variables d'environnement
 ├── config/
 │   ├── settings.py           # env-driven, REST, JWT, CORS, PostgreSQL
@@ -110,7 +108,7 @@ Règles supplémentaires :
 | `DJANGO_DEBUG` | `1` | `0` en production |
 | `DJANGO_ALLOWED_HOSTS` | `localhost,127.0.0.1` | hôtes acceptés |
 | `DB_NAME` / `DB_USER` / `DB_PASSWORD` | `taskify` | base PostgreSQL |
-| `DB_HOST` / `DB_PORT` | `localhost` / `5434` | `db` / `5432` dans docker-compose |
+| `DB_HOST` / `DB_PORT` | `localhost` / `5434` | hôte/port PostgreSQL |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost` | origines autorisées (dev Vite : `http://localhost:5173`) |
 
 ## Démarrage en développement
@@ -118,12 +116,12 @@ Règles supplémentaires :
 ```bash
 cd backend
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-cp .env.example .env                # DB_PORT=5434 → conteneur taskify-db
+cp .env.example .env                # DB_PORT=5434 → PostgreSQL (conteneur taskify-db)
 .venv/bin/python manage.py migrate
 .venv/bin/python manage.py runserver 8000
 ```
 
-> La base PostgreSQL tourne via `docker compose up -d db` (port `5434`).
+> La base PostgreSQL tourne dans le conteneur `taskify-db` (port `5434`).
 > Attention : le port **8080 est déjà occupé par Jenkins** sur cette machine.
 
 ### Admin Django
@@ -143,23 +141,10 @@ Couverture : auth JWT, CRUD projets, invitations/rôles, permissions par rôle
 (viewer en lecture seule), clôture conditionnelle, lecture seule après clôture,
 journal d'activité.
 
-## Conteneurisation
-
-```bash
-# inclus dans docker-compose.yml à la racine
-docker compose build backend
-docker compose up -d backend
-docker compose logs -f backend
-```
-
-`entrypoint.sh` : boucle d'attente → `migrate` → `collectstatic` → `gunicorn`
-sur `0.0.0.0:8000` (3 workers). Le service n'expose pas de port hôte :
-nginx (`frontend`) proxifie `/api/` vers `backend:8000` sur le réseau interne.
-
 ## Commandes utiles
 
 ```bash
-docker compose exec db psql -U taskify -d taskify   # requêter PostgreSQL
-docker compose exec backend python manage.py migrate
-docker compose exec backend python manage.py createsuperuser
+docker exec taskify-db psql -U taskify -d taskify   # requêter PostgreSQL
+.venv/bin/python manage.py migrate
+.venv/bin/python manage.py createsuperuser
 ```
