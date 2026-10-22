@@ -1,13 +1,10 @@
-import { api as mockApi } from './mockBackend'
-
 /**
- * Point d'entrée unique de l'API.
+ * Client REST unique — toutes les requêtes partent vers le backend Django.
  *
- * - Sans VITE_API_URL : API simulée persistée dans le localStorage (démo).
- * - Avec VITE_API_URL (ex: http://localhost:8000 ou /api via le proxy Vite) :
- *   les mêmes fonctions appellent le backend Django (JWT Bearer).
+ * En dev : VITE_API_URL=/api (proxy Vite → backend, cf. vite.config.js)
+ * En prod : le build reçoit VITE_API_URL=/api et nginx proxifie vers backend:8000
  */
-const BASE_URL = import.meta.env.VITE_API_URL || ''
+const BASE_URL = import.meta.env.VITE_API_URL || '/api'
 const TOKEN_KEY = 'taskify_token'
 const REFRESH_KEY = 'taskify_refresh'
 
@@ -37,11 +34,13 @@ function clearSession() {
   localStorage.removeItem(REFRESH_KEY)
 }
 
-async function call(name, ...args) {
-  if (!BASE_URL) return mockApi[name](...args)
+export function hasSession() {
+  return Boolean(localStorage.getItem(TOKEN_KEY))
+}
 
+async function call(name, ...args) {
   const mapping = REST_MAP[name]
-  if (!mapping) return mockApi[name](...args)
+  if (!mapping) throw new Error(`Méthode API inconnue : ${name}`)
 
   const [pathOrFn, method] = mapping
   const hasPathArg = typeof pathOrFn === 'function'
@@ -53,15 +52,20 @@ async function call(name, ...args) {
     name === 'logout' ? { refresh: localStorage.getItem(REFRESH_KEY) || '' } : body
 
   const token = localStorage.getItem(TOKEN_KEY)
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    credentials: 'include',
-    body: method === 'GET' ? undefined : JSON.stringify(payload ?? {}),
-  })
+  let res
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      credentials: 'include',
+      body: method === 'GET' ? undefined : JSON.stringify(payload ?? {}),
+    })
+  } catch {
+    throw Object.assign(new Error('Serveur injoignable'), { status: 0 })
+  }
 
   if (res.status === 401 && name !== 'login' && name !== 'register') {
     clearSession()
@@ -79,9 +83,7 @@ async function call(name, ...args) {
     if (data.refresh) localStorage.setItem(REFRESH_KEY, data.refresh)
     return data.user
   }
-  if (name === 'logout') {
-    clearSession()
-  }
+  if (name === 'logout') clearSession()
   return data
 }
 

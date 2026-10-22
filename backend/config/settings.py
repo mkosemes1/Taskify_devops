@@ -67,28 +67,22 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-# --- Base de données -------------------------------------------------------
+# --- Base de données : PostgreSQL (toujours, y compris pour les tests) ----
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('DB_NAME', 'taskify'),
+        'USER': os.getenv('DB_USER', 'taskify'),
+        'PASSWORD': os.getenv('DB_PASSWORD', 'taskify'),
+        'HOST': os.getenv('DB_HOST', 'localhost'),
+        'PORT': os.getenv('DB_PORT', '5434'),
+        'CONN_MAX_AGE': 60,
+    }
+}
+
 if 'test' in sys.argv:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': ':memory:',
-        }
-    }
-    # Hachage léger pendant les tests (leur durée d'exécution x20 sinon)
+    # Hachage léger pendant les tests (durée d'exécution x20 sinon)
     PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
-else:
-    DATABASES = {
-        'default': {
-            'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.postgresql'),
-            'NAME': os.getenv('DB_NAME', 'taskify'),
-            'USER': os.getenv('DB_USER', 'taskify'),
-            'PASSWORD': os.getenv('DB_PASSWORD', 'taskify'),
-            'HOST': os.getenv('DB_HOST', 'localhost'),
-            'PORT': os.getenv('DB_PORT', '5432'),
-            'CONN_MAX_AGE': 60,
-        }
-    }
 
 # --- Authentification ------------------------------------------------------
 AUTH_USER_MODEL = 'accounts.User'
