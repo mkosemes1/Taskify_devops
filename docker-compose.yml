@@ -1,10 +1,43 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: taskify
+      POSTGRES_USER: taskify
+      POSTGRES_PASSWORD: taskify
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskify -d taskify"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   backend:
     build: ./backend
     ports:
       - "8000:8000"
+    environment:
+      DB_NAME: taskify
+      DB_USER: taskify
+      DB_PASSWORD: taskify
+      DB_HOST: db
+      DB_PORT: "5432"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,backend"
+      CORS_ALLOWED_ORIGINS: "http://localhost:5173"
+    depends_on:
+      db:
+        condition: service_healthy
 
   frontend:
     build: ./frontend
     ports:
-      - "3000:3000"
+      - "5173:5173"
+    environment:
+      VITE_API_URL: /api
+      VITE_API_PROXY: "http://backend:8000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
